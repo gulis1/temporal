@@ -1,7 +1,8 @@
 use std::{sync::Arc, time::Duration};
 use k8s_openapi::api::discovery::v1::EndpointSlice;
-use kube::runtime::{controller::Action, watcher::Config, Controller};
-use kube::{ Api, Client};
+use kube::runtime::watcher;
+use kube::runtime::{controller::Action, Controller};
+use kube::{Api, Client, Config};
 use futures::StreamExt;
 use thiserror::Error;
 use tokio::sync::RwLock;
@@ -60,11 +61,23 @@ async fn reconcile(endpoint: Arc<EndpointSlice>, ctx: Arc<Context>) -> Result<Ac
 
 pub async fn run() {
 
-    let client = Client::try_default().await.expect("failed to create kube Client");
-    let endpoints = Api::<EndpointSlice>::namespaced(client, "kube-triton");
-    let context = CONTEXT.clone();
+    let cluster_config = Config::incluster();
+    let client = match cluster_config {
+        Ok(config) => {
+            println!("Running triton_proxy inside cluster.");
+            Client::try_from(config)
+        }
+        Err(_) => {
+            println!("Running triton_proxy outside cluster.");
+            Client::try_default().await
+        }
+    }.expect("Failed to create Kubernetes client.");
+    
 
-    Controller::new(endpoints, Config::default().any_semantic())
+    let endpoints = Api::<EndpointSlice>::namespaced(client, "kube-triton");
+
+    let context = CONTEXT.clone();
+    Controller::new(endpoints, watcher::Config::default().any_semantic())
         .shutdown_on_signal( )
         .run(reconcile, error_policy, context)
         .filter_map(|x| async move { std::result::Result::ok(x) })

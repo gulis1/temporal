@@ -65,11 +65,11 @@ async fn handle_request(client_conn: TcpStream, _: SocketAddr) {
 
     let n_nodes = read_handle.len();
     let target_node = (|| {
-        let index = (rand::random::<usize>() % n_nodes) + 1;
+        let index = rand::random::<usize>().checked_rem(n_nodes)? + 1;
         println!("Index: {index}");
         let target_ip = read_handle.get(index)?;
         Some(format!("{}:9999", target_ip))
-    })().unwrap_or("127.0.0.1:30800".to_string());
+    })().unwrap_or("127.0.0.1:8000".to_string());
     
     println!("Target node: {target_node}");
     let sock = TcpSocket::new_v4()
