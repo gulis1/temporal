@@ -1,4 +1,5 @@
-use tokio::task::JoinSet;
+#[macro_use]
+extern crate lazy_static;
 
 mod controller;
 mod metrics;
@@ -7,9 +8,7 @@ mod server;
 #[tokio::main]
 async fn main() {
 
-    let mut set = JoinSet::new();
-    // set.spawn(controller::run());
-    set.spawn(server::run());
-
-    while let Some(_) = set.join_next().await { }
+    tokio::spawn(async { controller::run().await; });
+    tokio::spawn(async { server::run().await; });
+    tokio::signal::ctrl_c().await.unwrap();
 }

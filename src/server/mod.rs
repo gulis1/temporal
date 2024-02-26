@@ -5,17 +5,22 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpSocket, TcpStream};
 use tokio::task::JoinSet;
 
+use crate::controller::get_context;
+
 const BUFFER_SIZE: usize = 8192;
 
 pub async fn run() {
 
     let listener = TcpListener::bind("0.0.0.0:9999").await.unwrap();
     loop {
-        let (conn, addr) = listener.accept().await.unwrap();
-        tokio::spawn(async move {
-            handle_request(conn, addr).await;
-        });
+        let client = listener.accept().await;
+        if let Ok((conn, addr)) = client {
+            tokio::spawn(async move {
+                handle_request(conn, addr).await;
+            });
+        }
     }
+
 }
 
 async fn proxy(client: TcpStream, triton: TcpStream) {
@@ -55,12 +60,23 @@ async fn proxy(client: TcpStream, triton: TcpStream) {
 
 async fn handle_request(client_conn: TcpStream, _: SocketAddr) {
 
-    let triton_sock = TcpSocket::new_v4()
+    let ctx = get_context();
+    let read_handle = ctx.nodes.read().await;
+
+    let n_nodes = read_handle.len();
+    let target_node = (|| {
+        let index = rand::random::<usize>() / n_nodes + 1;
+        let target_ip = read_handle.get(index)?;
+        Some(format!("{}:9999", target_ip))
+    })().unwrap_or("localhost:8000".to_string());
+    
+    println!("Target node: {target_node}");
+    let sock = TcpSocket::new_v4()
         .unwrap()
-        .connect(SocketAddr::from_str("10.42.0.77:8000").unwrap())
+        .connect(SocketAddr::from_str(&target_node).unwrap())
         .await
         .unwrap();
 
-    proxy(client_conn, triton_sock).await;
+    proxy(client_conn, sock).await;
     println!("Conexión terminada.");
 }

@@ -1,13 +1,18 @@
 use std::{sync::Arc, time::Duration};
-use k8s_openapi::api::core::v1::Pod;
+use k8s_openapi::api::discovery::v1::EndpointSlice;
 use kube::runtime::{controller::Action, watcher::Config, Controller};
 use kube::{ Api, Client};
 use futures::StreamExt;
 use thiserror::Error;
+use tokio::sync::RwLock;
+use std::env;
 
-use crate::metrics::get_metrics;
-
-static mut COUNTER: i64 = 0;
+lazy_static! {
+    static ref CONTEXT: Arc<Context> = Arc::new(Context {
+        current_pod_ip: env::var("POD_IP").unwrap(),
+        nodes: RwLock::new(Vec::new())
+    });
+}
 
 #[derive(Error, Debug)]
 enum Error {
@@ -23,43 +28,50 @@ enum Error {
 type Result<T, E = Error> = std::result::Result<T, E>;
 
 // Context for our reconciler
-#[derive(Clone)]
-struct Context {}
+pub struct Context {
+    current_pod_ip: String,
+    pub nodes: RwLock<Vec<String>>
+}
 
-fn error_policy(_doc: Arc<Pod>, _error: &Error, _ctx: Arc<Context>) -> Action {
+fn error_policy(_doc: Arc<EndpointSlice>, _error: &Error, _ctx: Arc<Context>) -> Action {
     println!("Error");
     Action::requeue(Duration::from_secs(5 * 60))
 }
 
-async fn reconcile(pod: Arc<Pod>, _ctx: Arc<Context>) -> Result<Action> {
-
-    let ip = pod.status.as_ref().and_then(|status| status.pod_ip.clone());
-    println!("{:?}", pod.status.as_ref().unwrap());
-    if let Some(ip) = ip {
-        unsafe {
-            println!("{COUNTER}: {}", ip);
-            COUNTER += 1;
-        }
-    }
-    else { println!("Error"); }
+async fn reconcile(endpoint: Arc<EndpointSlice>, ctx: Arc<Context>) -> Result<Action> {
     
+    let nodes= endpoint.endpoints.iter()
+        .filter(|node| node.conditions
+            .as_ref()
+            .and_then(|conds| conds.ready)
+            .is_some_and(|is_ready| is_ready)
+        )
+        .filter_map(|node| node.addresses.get(0).map(|addr| addr.clone()))
+        .filter(|addr| addr != &ctx.current_pod_ip);
 
-    // for endpoint in endpoints {
-    //     get_metrics(&endpoint).await;
-    // }
+    let mut write_handle = ctx.nodes.write().await;
+    write_handle.clear();
+    write_handle.extend(nodes);
+
+    println!("{:?}", write_handle.as_slice());
+    drop(write_handle);
     Ok(Action::requeue(Duration::from_secs(5 * 60))) 
 }
 
 pub async fn run() {
 
     let client = Client::try_default().await.expect("failed to create kube Client");
-    let endpoints = Api::<Pod>::namespaced(client, "kube-triton");
-    let context = Arc::new(Context{});
+    let endpoints = Api::<EndpointSlice>::namespaced(client, "kube-triton");
+    let context = CONTEXT.clone();
 
     Controller::new(endpoints, Config::default().any_semantic())
-        .shutdown_on_signal()
+        .shutdown_on_signal( )
         .run(reconcile, error_policy, context)
         .filter_map(|x| async move { std::result::Result::ok(x) })
         .for_each(|_| futures::future::ready(()))
         .await;
+}
+
+pub fn get_context() -> Arc<Context> {
+    CONTEXT.clone()
 }
