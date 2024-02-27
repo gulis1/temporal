@@ -1,6 +1,6 @@
+use log::info;
 use std::net::SocketAddr;
 use std::str::FromStr;
-
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpSocket, TcpStream};
 use tokio::task::JoinSet;
@@ -66,12 +66,11 @@ async fn handle_request(client_conn: TcpStream, _: SocketAddr) {
     let n_nodes = read_handle.len();
     let target_node = (|| {
         let index = rand::random::<usize>().checked_rem(n_nodes)? + 1;
-        println!("Index: {index}");
         let target_ip = read_handle.get(index)?;
         Some(format!("{}:9999", target_ip))
     })().unwrap_or("127.0.0.1:8000".to_string());
     
-    println!("Target node: {target_node}");
+    info!("Target node: {target_node}");
     let sock = TcpSocket::new_v4()
         .unwrap()
         .connect(SocketAddr::from_str(&target_node).unwrap())
@@ -79,5 +78,5 @@ async fn handle_request(client_conn: TcpStream, _: SocketAddr) {
         .unwrap();
 
     proxy(client_conn, sock).await;
-    println!("Conexión terminada.");
+    info!("Conexión terminada.");
 }

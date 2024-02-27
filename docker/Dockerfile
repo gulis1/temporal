@@ -1,12 +1,16 @@
-FROM rust:slim-buster
+FROM alpine:3.19 as build
 
-COPY . /controller_prueba
+RUN apk add musl musl-dev openssl-dev cargo
+
+COPY . /controller-prueba
+WORKDIR /controller-prueba
+
+RUN cargo build --release
+COPY ./target/release/controller-prueba /controller
+
+FROM alpine:3.19 
+RUN apk add libgcc
 COPY ./docker/config /root/.kube/config
-WORKDIR /controller_prueba
+COPY --from=build /controller-prueba/target/release/controller-prueba /controller
 
-RUN apt-get update -y && \
-    apt install -y pkg-config openssl libssl-dev && \
-    cargo build --release
-
-ENTRYPOINT ["cargo", "run", "--release"]
-#ENTRYPOINT ["bash"]
+ENTRYPOINT ["/controller"]

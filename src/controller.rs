@@ -1,3 +1,4 @@
+use log::{info, error};
 use std::{sync::Arc, time::Duration};
 use k8s_openapi::api::discovery::v1::EndpointSlice;
 use kube::runtime::watcher;
@@ -35,13 +36,13 @@ pub struct Context {
 }
 
 fn error_policy(_doc: Arc<EndpointSlice>, _error: &Error, _ctx: Arc<Context>) -> Action {
-    println!("Error");
+    error!("Error en reconcile.");
     Action::requeue(Duration::from_secs(5 * 60))
 }
 
 async fn reconcile(endpoint: Arc<EndpointSlice>, ctx: Arc<Context>) -> Result<Action> {
     
-    let nodes= endpoint.endpoints.iter()
+    let nodes = endpoint.endpoints.iter()
         .filter(|node| node.conditions
             .as_ref()
             .and_then(|conds| conds.ready)
@@ -54,7 +55,7 @@ async fn reconcile(endpoint: Arc<EndpointSlice>, ctx: Arc<Context>) -> Result<Ac
     write_handle.clear();
     write_handle.extend(nodes);
 
-    println!("{:?}", write_handle.as_slice());
+    info!("{:?}", write_handle.as_slice());
     drop(write_handle);
     Ok(Action::requeue(Duration::from_secs(5 * 60))) 
 }
@@ -64,11 +65,11 @@ pub async fn run() {
     let cluster_config = Config::incluster();
     let client = match cluster_config {
         Ok(config) => {
-            println!("Running triton_proxy inside cluster.");
+            info!("Running triton_proxy inside cluster.");
             Client::try_from(config)
         }
         Err(_) => {
-            println!("Running triton_proxy outside cluster.");
+            info!("Running triton_proxy outside cluster.");
             Client::try_default().await
         }
     }.expect("Failed to create Kubernetes client.");

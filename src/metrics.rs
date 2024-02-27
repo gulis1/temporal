@@ -1,9 +1,6 @@
 use std::str::FromStr;
 
 use prometheus_http_query::Client;
-// pub struct NodeInfo {
-//     nodes: Arc<Mutex<<HashMap<Sring, String>>
-// }
 
 
 pub async fn get_metrics(address: &str) {
