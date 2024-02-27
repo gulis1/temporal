@@ -2,7 +2,6 @@
 extern crate lazy_static;
 
 mod controller;
-mod metrics;
 mod server;
 
 #[tokio::main]
