@@ -1,0 +1,13 @@
+FROM nvidia/cuda:11.6.1-devel-ubuntu20.04 as build
+RUN apt update && \
+    apt install -y libssl-dev cargo
+COPY . /triton-proxy
+WORKDIR /triton-proxy
+RUN cargo build --release
+
+FROM debian:bullseye-slim
+COPY ./docker/config /root/.kube/config
+COPY ./docker/libs/tegra/* /lib/
+COPY --from=build /triton-proxy/target/release/triton-proxy /controller
+
+ENTRYPOINT ["/controller"]
