@@ -10,7 +10,6 @@ pub struct SystemInfo {
     pub cpu_arch: String,
     pub physical_cores: usize,
     pub total_memory: u64,
-    pub os_info: String,
     pub gpus: Vec<GpuInfo>
 }
 
@@ -35,7 +34,6 @@ pub fn get_hardware_info() -> SystemInfo {
         cpu_arch: System::cpu_arch().unwrap_or("Unknown".into()),
         physical_cores: sys.physical_core_count().unwrap_or(0),
         total_memory: sys.total_memory(),
-        os_info: System::long_os_version().unwrap_or("Unknown".into()),
         gpus: get_gpu_info()
     };
     

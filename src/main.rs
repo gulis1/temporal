@@ -1,15 +1,25 @@
 mod watcher;
 mod server;
 mod hardware;
+mod metrics;
 
 use std::env;
 use hardware::get_hardware_info;
 use kube::{Client, Config};
 use log::{error, info};
 use anyhow::{anyhow, Context, Result};
+use metrics::PrometheusClient;
 use watcher::AnnotationsWatcher;
 
+use crate::server::ProxyServer;
+
 pub const ANNOT_PREFIX: &str = "tritonservices.prueba.ucm.es";
+
+#[derive(Debug, Clone)]
+pub enum Message {
+    EndpointsChanged(Vec<String>),
+    AnnotationUpdate(Vec<(String, String)>)
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -20,6 +30,14 @@ async fn main() -> Result<()> {
         .init();
     }
     else { env_logger::init(); }
+    
+    // TEMPORAL
+    let (sender, mut receiver) = tokio::sync::mpsc::channel::<Message>(32);
+    let c = PrometheusClient::new("http://ocejon.dacya.ucm.es:9090", ANNOT_PREFIX.to_string(), sender);
+    loop {
+
+    }
+    // FIN TEMPORAL
 
     let cluster_config = Config::incluster();
     let client = match cluster_config {
@@ -35,18 +53,46 @@ async fn main() -> Result<()> {
 
     let (pod_namespace, pod_name) = get_env_vars()?;
     match client {
-        Ok(client) => {
-            let hw_info = get_hardware_info(); 
-            info!("Detected hardware: {:?}", hw_info);
-            let watcher = AnnotationsWatcher::new(client, pod_name, pod_namespace);
-            watcher.add_annot((format!("{ANNOT_PREFIX}/hw_info"), hw_info)).await;
-            server::start_server();
-            tokio::signal::ctrl_c().await.unwrap();
-            Ok(())
-        },
+        Ok(client) => main_task(client, pod_namespace, pod_name).await,
         Err(e) => {
             error!("Failed to start Kubernetes api client: {e}");
             Err(anyhow!("Failed to start Kubernetes client"))
+        }
+    }
+}
+
+async fn main_task(
+    client: Client, 
+    pod_namespace: String, 
+    pod_name: String
+) -> Result<()>
+{
+    let hw_info = get_hardware_info(); 
+    info!("Detected hardware: {:?}", hw_info);
+
+    let (sender, mut receiver) = tokio::sync::mpsc::channel::<Message>(32);
+    let proxy_server = ProxyServer::new("0.0.0.0:9999").await?;
+    let watcher = AnnotationsWatcher::new(
+        client,
+        pod_name,
+        pod_namespace,
+        ANNOT_PREFIX.to_string(),
+        sender.clone()
+    );
+
+    // Update the server with the probed hardware.
+    watcher.add_annot(vec![(format!("{ANNOT_PREFIX}/hw_info"), hw_info)]).await;
+    loop {
+        
+        let message = receiver.recv().await.context("Message channel closed.")?;
+        log::debug!("New message received: {:?}", message);
+        match message {
+            Message::EndpointsChanged(endpoints) => {
+                proxy_server.update_endpoints(endpoints);
+            },
+            Message::AnnotationUpdate(annots) => {
+                watcher.add_annot(annots).await;
+            }
         }
     }
 }
