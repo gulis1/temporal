@@ -31,14 +31,6 @@ async fn main() -> Result<()> {
     }
     else { env_logger::init(); }
     
-    // TEMPORAL
-    let (sender, mut receiver) = tokio::sync::mpsc::channel::<Message>(32);
-    let c = PrometheusClient::new("http://ocejon.dacya.ucm.es:9090", ANNOT_PREFIX.to_string(), sender);
-    loop {
-
-    }
-    // FIN TEMPORAL
-
     let cluster_config = Config::incluster();
     let client = match cluster_config {
         Ok(config) => {
