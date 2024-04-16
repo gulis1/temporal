@@ -4,6 +4,8 @@ use tokio::{sync::mpsc, task::{JoinHandle, JoinSet}, time::interval};
 use anyhow::Result;
 use crate::Message;
 
+const DEFAULT_QUERY_INERVAL_SECS: u64 = 60;
+
 pub struct PrometheusClient {
     task_handle: Option<JoinHandle<()>>
 }
@@ -33,7 +35,7 @@ impl PrometheusClient {
         let client = Arc::new(Client::from_str(target)?);
         let interval_secs: u64 = env::var("METRICS_QUERY_INTERVAL_SECS")
             .map(|var| var.parse())
-            .unwrap_or(Ok(5))?;
+            .unwrap_or(Ok(DEFAULT_QUERY_INERVAL_SECS))?;
 
         let handle = tokio::spawn(async move {
             let mut interval = interval(Duration::from_secs(interval_secs));
