@@ -51,6 +51,7 @@ impl PrometheusClient {
                     Err(e) => log::error!("Failed to query Prometheus metrics: {e}")
                 }
                 interval.tick().await;
+
             }
         });
         
